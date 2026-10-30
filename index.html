@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ダイ野ドラフトルーレット オンライン</title>
+<!-- Firebase SDKの読み込み -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<style>
+:root {
+--bg-color: #f0f4f8;
+--primary-color: #1e3a8a;
+--accent-color: #f59e0b;
+--card-bg: #ffffff;
+--text-main: #1f2937;
+--border-color: #e5e7eb;
+}
+body {
+font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif, 'Meiryo';
+background-color: var(--bg-color);
+color: var(--text-main);
+margin: 0;
+padding: 10px;
+}
+.container { max-width: 1400px; margin: 0 auto; }
+header {
+text-align: center; padding: 12px;
+background: linear-gradient(135deg, #1e3a8a, #3b82f6);
+color: white; border-radius: 12px; margin-bottom: 15px;
+}
+.card {
+background: var(--card-bg); border-radius: 12px; padding: 20px;
+box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 15px; text-align: center;
+}
+.btn {
+background: #10b981; color: white; border: none; padding: 10px 20px;
+font-size: 1rem; font-weight: bold; border-radius: 8px; cursor: pointer;
+box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+.btn:hover { background: #059669; }
+.btn-secondary { background: #6b7280; }
+.btn-danger { background: #ef4444; }
+input, select {
+padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.95rem; margin: 4px;
+}
+.hidden { display: none !important; }
+
+/* ロビー画面 */
+.lobby-box { max-width: 400px; margin: 40px auto; padding: 30px; background: white; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: left; }
+.lobby-box h2 { text-align: center; color: #1e3a8a; margin-top: 0; }
+.form-group { margin-bottom: 15px; }
+.form-group label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9rem; }
+.form-group input, .form-group select { width: 100%; box-sizing: border-box; }
+
+/* ゲーム画面レイアウト */
+.boards-container { display: flex; gap: 15px; overflow-x: auto; padding-bottom: 10px; }
+.team-board {
+background: var(--card-bg); border-radius: 12px; padding: 15px;
+width: 340px; min-width: 340px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+border-top: 6px solid #3b82f6; text-align: left;
+}
+.team-board.my-board { border-top-color: #10b981; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+th { background-color: #f3f4f6; color: #4b5563; padding: 6px; font-size: 0.85rem; }
+td { padding: 4px; border-bottom: 1px solid var(--border-color); }
+input:disabled, select:disabled { background-color: #f3f4f6; color: #9ca3af; cursor: not-allowed; }
+
+/* 各種エリア */
+.nomination-box {
+background: #eff6ff; border: 2px dashed #3b82f6; border-radius: 10px; padding: 15px; margin-top: 15px;
+}
+.result-box {
+background: #fef3c7; border: 2px solid #f59e0b; border-radius: 10px; padding: 15px; margin-top: 15px; text-align: left;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+<header>
+<h1 style="margin:0; font-size: 1.4rem;">⚾ ダイ野ドラフトルーレット (オンライン)</h1>
+</header>
+
+<!-- ================= 1. ロビー画面 ================= -->
+<div id="lobby-screen" class="lobby-box">
+<h2>ルーム入室</h2>
+<div class="form-group">
+<label>ニックネーム:</label>
+<input type="text" id="input-nickname" placeholder="例: 監督A">
+</div>
+<div class="form-group">
+<label>ルームID:</label>
+<input type="text" id="input-roomid" placeholder="例: room123">
+</div>
+<div class="form-group">
+<label>パスワード:</label>
+<input type="password" id="input-password" placeholder="合言葉">
+</div>
+
+<div style="display: flex; gap: 10px; margin-top: 20px;">
+<button class="btn" style="flex:1;" onclick="joinRoom()">部屋に参加</button>
+<button class="btn btn-secondary" style="flex:1;" onclick="showHostModal()">部屋を作る</button>
+</div>
+</div>
+
+<!-- ホスト作成モーダル -->
+<div id="host-config-box" class="lobby-box hidden">
+<h2>部屋を作成 (ホスト)</h2>
+<div class="form-group">
+<label>あなたのニックネーム:</label>
+<input type="text" id="host-nickname" placeholder="例: ホスト監督">
+</div>
+<div class="form-group">
+<label>ルームID:</label>
+<input type="text" id="host-roomid" placeholder="例: room123">
+</div>
+<div class="form-group">
+<label>パスワード:</label>
+<input type="password" id="host-password" placeholder="合言葉">
+</div>
+<div class="form-group">
+<label>参加人数 (1〜5人):</label>
+<select id="host-max-players">
+<option value="1">1人</option>
+<option value="2" selected>2人</option>
+<option value="3">3人</option>
+<option value="4">4人</option>
+<option value="5">5人</option>
+</select>
+</div>
+<div style="display: flex; gap: 10px; margin-top: 20px;">
+<button class="btn" style="flex:1;" onclick="createRoom()">作成して入室</button>
+<button class="btn btn-secondary" style="flex:1;" onclick="cancelHostModal()">戻る</button>
+</div>
+</div>
+
+<!-- ================= 2. ゲーム画面 ================= -->
+<div id="game-screen" class="hidden">
+<div class="card" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px;">
+<div>ルーム: <span id="display-room" style="font-weight:bold;">---</span> | ユーザー: <span id="display-myname" style="font-weight:bold; color:#10b981;">---</span></div>
+<button class="btn btn-danger" style="padding: 6px 12px; font-size: 0.85rem;" onclick="leaveRoom()">退出する</button>
+</div>
+
+<!-- ルーレット＆指名・公開エリア -->
+<div class="card">
+<h3 id="roulette-title" style="margin:0 0 10px 0; color:#1e3a8a;">野手ルーレット</h3>
+<div style="display: flex; justify-content: center; gap: 15px; align-items: center; margin-bottom: 10px;">
+<div id="r-left" style="background:#3b82f6; color:white; padding:12px 20px; border-radius:8px; font-size:1.2rem; font-weight:bold;">長</div>
+<span style="font-size:1.5rem; font-weight:bold;">×</span>
+<div id="r-right" style="background:#f59e0b; color:white; padding:12px 20px; border-radius:8px; font-size:1.2rem; font-weight:bold;">1〜5</div>
+</div>
+<div id="roulette-result-text" style="font-size: 1.2rem; font-weight: bold; margin-bottom: 10px;">結果: ルーレット待ち...</div>
+
+<!-- ホスト専用コントロール -->
+<div id="host-controls" class="hidden" style="background:#f3f4f6; padding:10px; border-radius:8px; margin-top:10px;">
+<p style="margin:0 0 8px 0; font-size:0.9rem; font-weight:bold;">[ホスト用操作パネル]</p>
+<button class="btn" onclick="spinRoulette()">🎲 ルーレットを回す</button>
+<button class="btn btn-secondary" onclick="toggleRouletteType()">投手/野手切り替え</button>
+<div id="host-status-msg" style="margin-top: 8px; font-weight: bold; color: #d97706;">待機中...</div>
+<button id="btn-reveal" class="btn hidden" style="margin-top: 8px; background: #3b82f6;" onclick="revealNominations()">📢 公開へ (抽選実行)</button>
+</div>
+
+<!-- 初回メンバー用指名入力エリア -->
+<div id="nomination-area" class="nomination-box hidden">
+<h4 id="nomination-heading" style="margin:0 0 8px 0; color:#1e3a8a;">🎯 獲得したい選手を入力してください</h4>
+<div style="display: flex; justify-content: center; gap: 8px;">
+<input type="text" id="nomination-input" placeholder="選手名を入力..." style="width: 250px;">
+<button id="btn-submit-nom" class="btn" onclick="submitNomination()">指名する</button>
+</div>
+<div id="nomination-status" style="margin-top: 8px; font-size: 0.9rem; font-weight:bold; color: #4b5563;">状態: 未入力</div>
+</div>
+
+<!-- 公開後の結果・抽選エリア -->
+<div id="result-area" class="result-box hidden">
+<h4 style="margin:0 0 8px 0; color: #b45309;">📊 指名結果・抽選発表</h4>
+<div id="result-content" style="font-size: 0.95rem;">公開待ち...</div>
+</div>
+</div>
+
+<!-- 全員のオーダー表一覧 -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin: 10px 0;">
+<h3 style="margin:0; color:#1e3a8a;">参加者のオーダー表</h3>
+<button id="btn-finish-board" class="btn hidden" onclick="finishMyBoard()" style="background: #3b82f6; padding: 6px 15px; font-size: 0.9rem;">✅ このオーダー表で記入完了</button>
+</div>
+<div class="boards-container" id="boards-container">
+<!-- 動的生成 -->
+</div>
+</div>
+
+</div>
+
+<script>
+// ==========================================
+// ⚠️ Firebase設定（ご自身の情報に書き換えてください）
+// ==========================================
+const firebaseConfig = {
+    apiKey: "AIzaSyDAknCS70TrBVHgru5M-bKR_LUkxe_ZTI4",
+  authDomain: "dyaonline-d920e.firebaseapp.com",
+  databaseURL: "https://dyaonline-d920e-default-rtdb.firebaseio.com",
+  projectId: "dyaonline-d920e",
+  storageBucket: "dyaonline-d920e.firebasestorage.app",
+  messagingSenderId: "795837307543",
+  appId: "1:795837307543:web:983cbba64319b1eb7327d2"
+};
+
+let db = null;
+try {
+firebase.initializeApp(firebaseConfig);
+db = firebase.database();
+} catch(e) {
+console.log("Firebase初期化エラー");
+}
+
+let currentRoomId = null;
+let myNickname = null;
+let isHost = false;
+let maxPlayers = 2;
+let myPlayerIndex = 1;
+
+const positions = ['', '投', '捕', '一', '二', '三', '遊', '左', '中', '右'];
+const batterLeft = ['長', 'ヒ', '巧', '足', '守', '肩'];
+const pitcherLeft = ['速', 'コン', 'スタ', '最大変化量', '最小変化量', '守'];
+let currentRouletteType = 'batter';
+
+function showHostModal() {
+document.getElementById('lobby-screen').classList.add('hidden');
+document.getElementById('host-config-box').classList.remove('hidden');
+}
+
+function cancelHostModal() {
+document.getElementById('host-config-box').classList.add('hidden');
+document.getElementById('lobby-screen').classList.remove('hidden');
+}
+
+function createRoom() {
+const nick = document.getElementById('host-nickname').value.trim();
+const roomId = document.getElementById('host-roomid').value.trim();
+const pass = document.getElementById('host-password').value.trim();
+maxPlayers = parseInt(document.getElementById('host-max-players').value);
+
+if (!nick || !roomId || !pass) {
+alert('すべての項目を入力してください');
+return;
+}
+
+myNickname = nick;
+currentRoomId = roomId;
+isHost = true;
+myPlayerIndex = 1;
+
+if (db) {
+db.ref('rooms/' + roomId).set({
+password: pass,
+maxPlayers: maxPlayers,
+host: nick,
+roulette: { type: 'batter', left: '長', right: '1〜5', active: false },
+players: { 1: nick },
+phase: 'waiting',
+nominations: {},
+reNominations: {},
+finishedBoards: {},
+lotteryResults: null,
+losers: [],
+boards: {}
+});
+}
+
+enterGameScreen();
+}
+
+function joinRoom() {
+const nick = document.getElementById('input-nickname').value.trim();
+const roomId = document.getElementById('input-roomid').value.trim();
+const pass = document.getElementById('input-password').value.trim();
+
+if (!nick || !roomId || !pass) {
+alert('すべての項目を入力してください');
+return;
+}
+
+myNickname = nick;
+currentRoomId = roomId;
+isHost = false;
+
+if (db) {
+db.ref('rooms/' + roomId).once('value', snapshot => {
+const val = snapshot.val();
+if (!val) {
+alert('指定されたルームが存在しません');
+return;
+}
+if (val.password !== pass) {
+alert('パスワードが間違っています');
+return;
+}
+maxPlayers = val.maxPlayers || 2;
+
+let players = val.players || {};
+let assignedSlot = 0;
+for (let i = 1; i <= maxPlayers; i++) {
+if (!players[i]) {
+assignedSlot = i;
+break;
+} else if (players[i] === nick) {
+assignedSlot = i;
+break;
+}
+}
+
+if (assignedSlot === 0) {
+alert('この部屋は満員です');
+return;
+}
+
+myPlayerIndex = assignedSlot;
+db.ref(`rooms/${roomId}/players/${myPlayerIndex}`).set(nick);
+enterGameScreen();
+});
+} else {
+enterGameScreen();
+}
+}
+
+function enterGameScreen() {
+document.getElementById('lobby-screen').classList.add('hidden');
+document.getElementById('host-config-box').classList.add('hidden');
+document.getElementById('game-screen').classList.remove('hidden');
+
+document.getElementById('display-room').innerText = currentRoomId;
+document.getElementById('display-myname').innerText = myNickname + (isHost ? ' (ホスト)' : '');
+
+if (isHost) {
+document.getElementById('host-controls').classList.remove('hidden');
+}
+
+buildBoards();
+setupSync();
+}
+
+function leaveRoom() {
+if (confirm('部屋から退出しますか？')) {
+location.reload();
+}
+}
+
+// オーダー表の構築（1〜9番 ＋ 控え1〜3）
+function buildBoards() {
+const container = document.getElementById('boards-container');
+container.innerHTML = '';
+
+const posOptions = positions.map(p => `<option value="${p}">${p || '選択'}</option>`).join('');
+
+for (let i = 1; i <= maxPlayers; i++) {
+let rowsHtml = '';
+
+// 1〜9番の打順行
+for (let r = 1; r <= 9; r++) {
+rowsHtml += `
+<tr>
+<td style="font-weight:bold; text-align:center; color:#3b82f6;">${r}</td>
+<td><input type="text" class="player-name" data-board="${i}" data-row="${r}" placeholder="選手名" oninput="onBoardInput(this)"></td>
+<td><select class="player-pos" data-board="${i}" data-row="${r}" onchange="onBoardInput(this)">${posOptions}</select></td>
+</tr>
+`;
+}
+
+// 控え1〜3の行
+for (let sub = 1; sub <= 3; sub++) {
+const rowKey = `sub${sub}`;
+rowsHtml += `
+<tr style="background-color: #f9fafb;">
+<td style="font-weight:bold; text-align:center; color:#6b7280; font-size:0.8rem;">控え${sub}</td>
+<td><input type="text" class="player-name" data-board="${i}" data-row="${rowKey}" placeholder="選手名" oninput="onBoardInput(this)"></td>
+<td><select class="player-pos" data-board="${i}" data-row="${rowKey}" onchange="onBoardInput(this)">${posOptions}</select></td>
+</tr>
+`;
+}
+
+const board = document.createElement('div');
+board.className = `team-board ${i === myPlayerIndex ? 'my-board' : ''}`;
+board.id = `board-container-${i}`;
+board.innerHTML = `
+<h4 id="board-title-${i}" style="margin:0 0 8px 0; color:#1e3a8a;">チーム ${i} (待機中...)</h4>
+<table>
+<thead><tr><th>打順/枠</th><th>名前</th><th>ポジション</th></tr></thead>
+<tbody>${rowsHtml}</tbody>
+</table>
+`;
+container.appendChild(board);
+}
+
+// 他人のオーダー表を操作不可（disabled）にする
+for (let i = 1; i <= maxPlayers; i++) {
+if (i !== myPlayerIndex) {
+const boardEl = document.getElementById(`board-container-${i}`);
+if (boardEl) {
+const inputs = boardEl.querySelectorAll('input, select');
+inputs.forEach(el => el.disabled = true);
+}
+}
+}
+
+document.getElementById('btn-finish-board').classList.remove('hidden');
+}
+
+// 自分のオーダー表の入力内容をFirebaseに即時反映
+function onBoardInput(element) {
+const boardIndex = parseInt(element.getAttribute('data-board'));
+if (boardIndex !== myPlayerIndex) return;
+
+const row = element.getAttribute('data-row');
+const tr = element.closest('tr');
+const nameVal = tr.querySelector('.player-name').value;
+const posVal = tr.querySelector('.player-pos').value;
+
+if (db) {
+db.ref(`rooms/${currentRoomId}/boards/${boardIndex}/${row}`).set({
+name: nameVal,
+pos: posVal
+});
+}
+}
+
+// 「記入完了」ボタン（自分の入力行をロック）
+function finishMyBoard() {
+const myBoard = document.getElementById(`board-container-${myPlayerIndex}`);
+if (myBoard) {
+const rows = myBoard.querySelectorAll('tbody tr');
+rows.forEach(row => {
+const nameInput = row.querySelector('.player-name');
+const posSelect = row.querySelector('.player-pos');
+if (nameInput.value.trim() !== '' && posSelect.value !== '') {
+nameInput.disabled = true;
+posSelect.disabled = true;
+}
+});
+}
+
+if (db) {
+db.ref(`rooms/${currentRoomId}/finishedBoards/${myNickname}`).set(true);
+}
+alert('記入完了を送信しました！全員の完了を待っています。');
+const btnFinish = document.getElementById('btn-finish-board');
+btnFinish.disabled = true;
+btnFinish.style.background = '#9ca3af';
+}
+
+// ホスト：ルーレットを回す（新しいラウンドへ）
+function spinRoulette() {
+const leftArr = currentRouletteType === 'batter' ? batterLeft : pitcherLeft;
+const l = leftArr[Math.floor(Math.random() * leftArr.length)];
+const r = ['1〜5', '6', '7', '8', '9', '10'][Math.floor(Math.random() * 6)];
+
+if (db) {
+db.ref('rooms/' + currentRoomId).update({
+'roulette': { type: currentRouletteType, left: l, right: r, active: true },
+'phase': 'nominating',
+'nominations': {},
+'reNominations': {},
+'lotteryResults': null,
+'losers': [],
+'finishedBoards': null // ルーレットを回すたびに記入完了状態をリセット
+});
+}
+}
+
+function toggleRouletteType() {
+currentRouletteType = currentRouletteType === 'batter' ? 'pitcher' : 'batter';
+document.getElementById('roulette-title').innerText = currentRouletteType === 'batter' ? '野手ルーレット' : '投手ルーレット';
+spinRoulette();
+}
+
+// 初回指名送信
+function submitNomination() {
+const val = document.getElementById('nomination-input').value.trim();
+if (!val) {
+alert('選手名を入力してください');
+return;
+}
+
+if (db) {
+db.ref(`rooms/${currentRoomId}/nominations/${myNickname}`).set(val);
+}
+document.getElementById('nomination-status').innerText = `状態: 指名完了！(結果待ち)`;
+document.getElementById('nomination-input').disabled = true;
+document.getElementById('btn-submit-nom').disabled = true;
+document.getElementById('btn-submit-nom').style.background = '#9ca3af';
+}
+
+// 再指名送信
+function submitReNomination() {
+const val = document.getElementById('re-nomination-input').value.trim();
+if (!val) {
+alert('選手名を入力してください');
+return;
+}
+
+if (db) {
+db.ref(`rooms/${currentRoomId}/reNominations/${myNickname}`).set(val);
+}
+alert('再指名を送信しました！');
+const inputEl = document.getElementById('re-nomination-input');
+const btnEl = document.getElementById('btn-submit-renom');
+if (inputEl) inputEl.disabled = true;
+if (btnEl) {
+btnEl.disabled = true;
+btnEl.style.background = '#9ca3af';
+btnEl.innerText = '送信済み';
+}
+}
+
+// ホスト：公開・公平抽選の実行
+function revealNominations() {
+if (!db) return;
+
+db.ref('rooms/' + currentRoomId).once('value', snapshot => {
+const val = snapshot.val();
+if (!val) return;
+
+const existingResults = val.lotteryResults || {};
+const losers = val.losers || [];
+
+let activeNominations = {};
+if (Object.keys(existingResults).length === 0) {
+activeNominations = val.nominations || {};
+} else {
+const reNoms = val.reNominations || {};
+losers.forEach(loser => {
+if (reNoms[loser]) {
+activeNominations[loser] = reNoms[loser];
+}
+});
+}
+
+let nameCounts = {};
+for (let name in activeNominations) {
+let targetPlayer = activeNominations[name];
+nameCounts[targetPlayer] = (nameCounts[targetPlayer] || []).concat(name);
+}
+
+let newLotteryResults = Object.assign({}, existingResults);
+let nextLosers = [];
+
+for (let targetPlayer in nameCounts) {
+let cappers = nameCounts[targetPlayer];
+if (cappers.length > 1) {
+let winner = cappers[Math.floor(Math.random() * cappers.length)];
+newLotteryResults[targetPlayer] = {
+type: 'conflict',
+cappers: cappers,
+winner: winner
+};
+cappers.forEach(c => {
+if (c !== winner) nextLosers.push(c);
+});
+} else {
+newLotteryResults[targetPlayer] = {
+type: 'single',
+winner: cappers[0]
+};
+}
+}
+
+db.ref('rooms/' + currentRoomId).update({
+phase: 'revealed',
+lotteryResults: newLotteryResults,
+losers: nextLosers,
+reNominations: {}
+});
+});
+}
+
+// リアルタイム同期処理
+function setupSync() {
+if (!db) return;
+
+db.ref('rooms/' + currentRoomId).on('value', snapshot => {
+const val = snapshot.val();
+if (!val) return;
+
+// 1. ルーレット表示
+if (val.roulette) {
+document.getElementById('roulette-title').innerText = val.roulette.type === 'batter' ? '野手ルーレット' : '投手ルーレット';
+document.getElementById('r-left').innerText = val.roulette.left;
+document.getElementById('r-right').innerText = val.roulette.right;
+document.getElementById('roulette-result-text').innerText = `結果: ${val.roulette.left} × ${val.roulette.right}`;
+}
+
+// 2. プレイヤー名
+const players = val.players || {};
+for (let i = 1; i <= maxPlayers; i++) {
+const titleEl = document.getElementById(`board-title-${i}`);
+if (titleEl) {
+if (players[i]) {
+titleEl.innerText = `チーム ${i} (${players[i]})` + (i === myPlayerIndex ? ' [自分]' : '');
+} else {
+titleEl.innerText = `チーム ${i} (空き)`;
+}
+}
+}
+
+// 3. オーダー表のリアルタイム同期（1〜9番 ＋ 控え1〜3）
+const boardsData = val.boards || {};
+const rowKeys = ['1','2','3','4','5','6','7','8','9','sub1','sub2','sub3'];
+
+for (let b = 1; b <= maxPlayers; b++) {
+const boardData = boardsData[b] || {};
+rowKeys.forEach(r => {
+const rowData = boardData[r] || { name: '', pos: '' };
+
+const nameInput = document.querySelector(`.player-name[data-board="${b}"][data-row="${r}"]`);
+const posSelect = document.querySelector(`.player-pos[data-board="${b}"][data-row="${r}"]`);
+
+if (nameInput && document.activeElement !== nameInput) {
+nameInput.value = rowData.name || '';
+}
+if (posSelect && document.activeElement !== posSelect) {
+posSelect.value = rowData.pos || '';
+}
+});
+}
+
+// 4. フェーズ同期・ロジック
+const phase = val.phase || 'waiting';
+const nominationArea = document.getElementById('nomination-area');
+const resultArea = document.getElementById('result-area');
+const hostStatusMsg = document.getElementById('host-status-msg');
+const btnReveal = document.getElementById('btn-reveal');
+
+const activePlayers = Object.values(players).filter(Boolean);
+const activePlayersCount = activePlayers.length;
+
+const nominations = val.nominations || {};
+const submittedCount = Object.keys(nominations).length;
+
+if (phase === 'waiting') {
+nominationArea.classList.add('hidden');
+resultArea.classList.add('hidden');
+if (isHost) {
+hostStatusMsg.innerText = 'ルーレットを回してください';
+btnReveal.classList.add('hidden');
+}
+}
+else if (phase === 'nominating') {
+nominationArea.classList.remove('hidden');
+resultArea.classList.add('hidden');
+
+const nomInput = document.getElementById('nomination-input');
+const btnSubmit = document.getElementById('btn-submit-nom');
+if (nomInput.disabled && !nominations[myNickname]) {
+nomInput.value = '';
+nomInput.disabled = false;
+btnSubmit.disabled = false;
+btnSubmit.style.background = '#10b981';
+document.getElementById('nomination-status').innerText = '状態: 未入力';
+}
+
+// 【追加】新しいルーレットが回されてnominatingになった時、記入完了ボタンを再び押せるように復活させる
+const btnFinish = document.getElementById('btn-finish-board');
+const finishedBoards = val.finishedBoards || {};
+if (btnFinish && !finishedBoards[myNickname]) {
+btnFinish.disabled = false;
+btnFinish.style.background = '#3b82f6';
+}
+
+if (isHost) {
+hostStatusMsg.innerText = `指名状況: ${submittedCount} / ${activePlayersCount} 人完了`;
+
+if (submittedCount >= activePlayersCount && activePlayersCount > 0) {
+hostStatusMsg.innerText = '🎉 全員の指名が完了しました！';
+hostStatusMsg.style.color = '#10b981';
+btnReveal.classList.remove('hidden');
+} else {
+btnReveal.classList.add('hidden');
+}
+}
+}
+else if (phase === 'revealed') {
+nominationArea.classList.add('hidden');
+resultArea.classList.remove('hidden');
+
+const lotteryResults = val.lotteryResults || {};
+const losers = val.losers || [];
+const reNominations = val.reNominations || {};
+
+let summaryHtml = '<ul style="margin:0; padding-left:20px;">';
+for (let targetPlayer in lotteryResults) {
+let res = lotteryResults[targetPlayer];
+if (res.type === 'conflict') {
+summaryHtml += `<li><b>${targetPlayer}</b> ➡ 競合 (${res.cappers.join(', ')}さん) 🎲抽選結果: <b>${res.winner}さん獲得！</b></li>`;
+} else {
+summaryHtml += `<li><b>${targetPlayer}</b> ➡ ${res.winner}さん単独指名 (獲得！)</li>`;
+}
+}
+summaryHtml += '</ul>';
+
+if (losers.includes(myNickname)) {
+summaryHtml += `
+<div style="margin-top: 15px; padding: 12px; background: #fff; border-radius: 8px; border: 2px dashed #ef4444;">
+<p style="color:#ef4444; font-weight:bold; margin:0 0 8px 0;">⚠️ 抽選に外れました。新しい再指名選手を入力してください。</p>
+<div style="display: flex; gap: 8px;">
+<input type="text" id="re-nomination-input" placeholder="再指名の選手名..." style="width: 250px;">
+<button id="btn-submit-renom" class="btn" onclick="submitReNomination()">再指名する</button>
+</div>
+</div>
+`;
+}
+
+document.getElementById('result-content').innerHTML = summaryHtml || '指名はありませんでした。';
+
+if (isHost) {
+if (losers.length > 0) {
+const reNomCount = Object.keys(reNominations).length;
+hostStatusMsg.innerText = `再指名待ち: ${reNomCount} / ${losers.length} 人完了`;
+
+if (reNomCount >= losers.length) {
+hostStatusMsg.innerText = '🎉 外れた人全員の再指名が完了しました！';
+hostStatusMsg.style.color = '#10b981';
+btnReveal.classList.remove('hidden');
+} else {
+btnReveal.classList.add('hidden');
+}
+} else {
+const finishedBoards = val.finishedBoards || {};
+const finishedCount = Object.keys(finishedBoards).length;
+hostStatusMsg.innerText = `オーダー記入状況: ${finishedCount} / ${activePlayersCount} 人完了`;
+btnReveal.classList.add('hidden');
+
+if (finishedCount >= activePlayersCount && activePlayersCount > 0) {
+hostStatusMsg.innerText = '✅ 全員のオーダー記入が完了しました！新しくルーレットを回してください。';
+hostStatusMsg.style.color = '#10b981';
+}
+}
+}
+}
+});
+}
+</script>
+
+</body>
+</html>
